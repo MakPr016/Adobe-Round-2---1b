@@ -7,16 +7,6 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 class PDFProcessor:
     def __init__(self, domain_config=None):
-        """
-        Initialize PDF processor with optional domain configuration
-        :param domain_config: Dictionary with domain-specific settings
-            Example: {
-                "action_verbs": ["create", "manage", "prepare"],
-                "boost_terms": ["fillable", "onboarding", "vegetarian"],
-                "penalty_terms": ["history", "theory"],
-                "heading_threshold": 1.5
-            }
-        """
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         
         # Default configuration
@@ -27,7 +17,9 @@ class PDFProcessor:
             "penalty_terms": set(),
             "heading_threshold": 1.5,
             "min_heading_length": 3,
-            "max_heading_length": 100
+            "max_heading_length": 100,
+            "paragraph_min_length": 30,
+            "paragraph_max_length": 500
         }
         
         # Merge with custom domain config
@@ -40,7 +32,7 @@ class PDFProcessor:
                         self.config[key] = domain_config[key]
     
     def extract_sections(self, pdf_path):
-        """Extract hierarchical sections from PDF document"""
+        """Extract hierarchical sections from PDF document with improved logic"""
         sections = []
         with pdfplumber.open(pdf_path) as pdf:
             current_section = None
@@ -79,12 +71,10 @@ class PDFProcessor:
                         (y_pos < page_height * 0.15)
                     )
                     
-                    # Additional checks for valid headings
+                    # More flexible heading validation
                     is_valid_heading = (
                         self.config["min_heading_length"] < len(line_text) < self.config["max_heading_length"] and
-                        not line_text.endswith(('.', ',', ';', ':')) and
-                        line_text[0].isupper() and
-                        not any(char.isdigit() for char in line_text)  # Exclude page numbers
+                        line_text.strip()[0].isupper()  # First character should be uppercase
                     )
                     
                     if is_heading and is_valid_heading:
@@ -134,19 +124,9 @@ class PDFProcessor:
             clean_para = re.sub(r'\s+', ' ', clean_para).strip()  # Normalize whitespace
             clean_para = re.sub(r'^\W+', '', clean_para)  # Remove leading punctuation
             
-            # Split into sentences using simple method
-            sentences = re.split(r'(?<=[.!?])\s+', clean_para)
-            
-            if sentences:
-                # Take first 2-3 sentences to ensure completeness
-                if len(sentences) > 2:
-                    meaningful_para = ' '.join(sentences[:3])
-                else:
-                    meaningful_para = ' '.join(sentences)
-                
-                # Ensure reasonable length
-                if 50 < len(meaningful_para) < 500:
-                    cleaned_paragraphs.append(meaningful_para)
+            # Check length requirements
+            if self.config["paragraph_min_length"] < len(clean_para) < self.config["paragraph_max_length"]:
+                cleaned_paragraphs.append(clean_para)
         
         return cleaned_paragraphs
 

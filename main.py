@@ -27,15 +27,21 @@ def rank_content(documents, pdf_processor, persona, job):
     query_embedding = pdf_processor.create_context_embedding(persona, job)
     all_sections = []
     all_paragraphs = []
+    
     for doc in documents:
         for section in doc["sections"]:
+            # Skip sections with invalid titles
             if not section["title"] or len(section["title"].strip()) < 3:
                 continue
+            
+            # Process paragraphs within sections
             paragraphs = pdf_processor.extract_paragraphs(section["text"])
             for para in paragraphs:
+                # Calculate relevance scores
                 semantic_score = pdf_processor.calculate_semantic_similarity(para, query_embedding)
                 content_relevance = pdf_processor.calculate_content_relevance(para, job)
                 combined_score = semantic_score * content_relevance
+                
                 all_paragraphs.append({
                     "document": doc["filename"],
                     "text": para,
@@ -43,59 +49,29 @@ def rank_content(documents, pdf_processor, persona, job):
                     "section_title": section["title"],
                     "relevance": combined_score
                 })
-            semantic_score = pdf_processor.calculate_semantic_similarity(
-                section["title"] + " " + section["text"], 
-                query_embedding
-            )
-            content_relevance = pdf_processor.calculate_content_relevance(
-                section["title"] + " " + section["text"],
-                job
-            )
+
+            # Calculate relevance for entire section
+            full_text = section["title"] + " " + section["text"]
+            semantic_score = pdf_processor.calculate_semantic_similarity(full_text, query_embedding)
+            content_relevance = pdf_processor.calculate_content_relevance(full_text, job)
             combined_score = semantic_score * content_relevance
+            
             all_sections.append({
                 "document": doc["filename"],
                 "title": section["title"],
                 "page": section["page"],
                 "relevance": combined_score
             })
+    
     return all_sections, all_paragraphs
 
 def generate_output(input_data, ranked_sections, ranked_paragraphs):
-    selected_sections = []
-    seen_docs = set()
-    for section in sorted(ranked_sections, key=lambda x: x["relevance"], reverse=True):
-        if section["document"] not in seen_docs:
-            clean_title = section["title"]
-            clean_title = re.sub(r'^\W+', '', clean_title)
-            clean_title = re.sub(r'\s+', ' ', clean_title)
-            clean_title = clean_title[:100]
-            selected_sections.append({
-                "document": section["document"],
-                "title": clean_title,
-                "page": section["page"],
-                "relevance": section["relevance"]
-            })
-            seen_docs.add(section["document"])
-        if len(selected_sections) >= 5:
-            break
-    selected_paragraphs = []
-    seen_docs = set()
-    for para in sorted(ranked_paragraphs, key=lambda x: x["relevance"], reverse=True):
-        if para["document"] not in seen_docs:
-            clean_text = para["text"]
-            clean_text = re.sub(r'^\W+', '', clean_text)
-            clean_text = re.sub(r'\s+', ' ', clean_text)
-            if any(verb in clean_text.lower() for verb in 
-                  {"visit", "explore", "try", "go", "see", "stay", "eat", "book", "reserve", "discover"}):
-                selected_paragraphs.append({
-                    "document": para["document"],
-                    "text": clean_text,
-                    "page": para["page"],
-                    "relevance": para["relevance"]
-                })
-                seen_docs.add(para["document"])
-        if len(selected_paragraphs) >= 5:
-            break
+    # Select top 5 sections by relevance
+    selected_sections = sorted(ranked_sections, key=lambda x: x["relevance"], reverse=True)[:5]
+    
+    # Select top 5 paragraphs by relevance
+    selected_paragraphs = sorted(ranked_paragraphs, key=lambda x: x["relevance"], reverse=True)[:5]
+    
     return {
         "metadata": {
             "input_documents": [doc["filename"] for doc in input_data["documents"]],
@@ -117,14 +93,43 @@ def generate_output(input_data, ranked_sections, ranked_paragraphs):
     }
 
 def save_output(output, path="output/output.json"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         json.dump(output, f, indent=2)
 
+def create_domain_config(job_description):
+    """Dynamically generate domain config based on job description"""
+    # Extract keywords from job description
+    job_lower = job_description.lower()
+    keywords = set(re.findall(r'\b\w+\b', job_lower))
+    
+    # Remove common stop words
+    stop_words = {"and", "the", "for", "to", "of", "in", "a", "on", "with", "as", "be", "is"}
+    keywords = keywords - stop_words
+    
+    # Extract action verbs from job description
+    action_verbs = {
+        "create", "manage", "prepare", "plan", "organize", 
+        "develop", "build", "make", "design", "arrange"
+    }
+    detected_verbs = {verb for verb in action_verbs if verb in job_lower}
+    
+    return {
+        "action_verbs": detected_verbs,
+        "boost_terms": keywords,
+        "penalty_terms": set(),
+        "heading_threshold": 1.5
+    }
+
 def main():
-    pdf_processor = PDFProcessor()
     input_data = load_input()
     persona = input_data["persona"]["role"]
     job = input_data["job_to_be_done"]["task"]
+    
+    # Create domain-specific configuration
+    domain_config = create_domain_config(job)
+    pdf_processor = PDFProcessor(domain_config)
+    
     documents = process_documents(input_data, pdf_processor)
     ranked_sections, ranked_paragraphs = rank_content(documents, pdf_processor, persona, job)
     output = generate_output(input_data, ranked_sections, ranked_paragraphs)
