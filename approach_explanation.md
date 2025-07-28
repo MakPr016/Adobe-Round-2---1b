@@ -1,57 +1,131 @@
-# Approach Explanation - Adobe Hackathon Round 1B
 
-## Problem Summary
-
-The goal of Round 1B is to process a collection of PDF documents and extract the most relevant sections and paragraphs based on a given persona and job-to-be-done. The system must intelligently understand the content and rank outputs in a way that aligns with user intent.
+# Approach Explanation – Adobe Hackathon Round 1B
+## Challenge: Persona-Driven Document Intelligence
 
 ---
 
-## Methodology
+## 🔍 Objective
 
-### 1. **PDF Parsing and Section Extraction**
-We used `pdfplumber` to extract textual content along with layout metadata such as font size, boldness, and vertical position. This metadata is then analyzed to identify headings (likely to be sections). The logic uses a combination of:
-- Relative font size (1.5× median)
-- Bold font presence
-- Position on the page (top 15%)
-- Heuristic filters (e.g., no numbers, short and capitalized phrases)
+The goal of this solution is to build an intelligent PDF analysis system that extracts and ranks the **most relevant sections and sub-sections** from a collection of documents based on a **given persona** and their **job-to-be-done**.
 
-Each heading begins a new "section", and the text beneath it until the next heading is captured as that section's content.
+The system must understand both the structural and semantic content of documents and deliver meaningful summaries, tailored for each user type.
 
 ---
 
-### 2. **Context Embedding Creation**
-A semantic context is created from the persona and job description using a `SentenceTransformer` model (`all-MiniLM-L6-v2`). This embedding is used to compare with each extracted section/paragraph to calculate semantic relevance.
+## 🧠 High-Level Strategy
 
-Additional task-specific clues (e.g., "group of 10", "college friends", "4 days") are also parsed from the job to further refine the context.
+This project is structured into the following core stages:
+
+### 1. 📥 Input Parsing
+
+- Load the **input JSON** that includes:
+  - `documents`: List of PDF filenames and metadata
+  - `persona`: User’s role and focus areas
+  - `job_to_be_done`: The concrete task the persona wants to accomplish
+
+### 2. 📄 PDF Section Extraction
+
+- We use `pdfplumber` to parse PDF files.
+- Each page is scanned line-by-line to detect **headings** and **text blocks**.
+- Headings are identified using heuristics:
+  - Font size greater than the **median**
+  - Font name contains **bold**
+  - Position near the **top of the page**
+- Validated against configurable constraints like:
+  - Heading length (min/max)
+  - Starts with uppercase
+- Each heading opens a new **section**, and following lines are appended as **section text**.
+
+This creates a structured document with a list of sections:
+```json
+{
+  "title": "Introduction to GNN",
+  "text": "...",
+  "page": 2
+}
+```
 
 ---
 
-### 3. **Relevance Scoring and Ranking**
-Each section and its paragraphs are ranked using:
-- **Semantic similarity** with the context embedding
-- **Content relevance** using rule-based keyword scoring (e.g., travel-related verbs, duration/group info, domain-specific boosts)
+### 3. ✂️ Paragraph Extraction
 
-The final score is a multiplication of these two, ensuring both semantic and task-relevance are considered.
-
----
-
-### 4. **Selection and Output**
-- The top 5 **sections** are selected from different documents based on ranked relevance.
-- The top 5 **paragraphs** are selected using additional filters (e.g., must contain action verbs).
-- Output is formatted in JSON with metadata, section ranking, and paragraph analysis.
+- Section text is split into **paragraphs** based on:
+  - Double newlines (`\n\n`)
+  - Minimum and maximum length thresholds
+  - Removal of bullet symbols and formatting noise
+- Each paragraph is cleaned and prepared for semantic analysis.
 
 ---
 
-## Compliance
-- ✅ No hardcoded rules or filenames
-- ✅ All logic works offline (no internet calls)
-- ✅ Model size is under 100MB (`MiniLM`)
-- ✅ Runs efficiently on CPU (tested with 3–5 documents within 60 seconds)
+### 4. 🧬 Semantic Embedding & Scoring
+
+#### a. **Embedding Creation**
+- A sentence embedding model (`all-MiniLM-L6-v2`) is loaded using `sentence-transformers`.
+- A combined embedding is created for:
+  ```
+  Persona: [persona]
+  Task: [job_to_be_done]
+  ```
+
+#### b. **Relevance Scoring**
+Each paragraph and section is scored based on:
+1. **Semantic similarity**:
+   - Cosine similarity between the paragraph and persona+job embedding
+2. **Content relevance**:
+   - Boosts score if:
+     - Contains **action verbs** (`prepare`, `analyze`, `study`)
+     - Contains **keywords** from the job description
+     - Includes **numeric indicators** (like dates, values)
+   - Penalizes for irrelevant or noisy terms (if configured)
+
+Combined relevance score:
+```
+final_score = semantic_similarity * content_relevance
+```
 
 ---
 
-## Improvements & Next Steps
-- Add multilingual support
-- Improve heading hierarchy (e.g., detect H1/H2/H3)
-- Use lightweight layout models to infer visual structure
+### 5. 📊 Ranking & Output Generation
 
+- Top **5 sections** and **5 paragraphs** are selected based on final scores.
+- Output includes:
+  - Metadata (persona, job, timestamp)
+  - Extracted sections with titles, document, page, and rank
+  - Subsection analysis: paragraph text and location
+
+---
+
+## 🧱 Domain Config Customization
+
+The system dynamically builds a **domain config** from the job description:
+- Extracts keywords (ignoring stopwords)
+- Detects intent from action verbs
+- These are passed into the `PDFProcessor` to influence scoring heuristics
+
+---
+
+## ✅ Constraints Met
+
+| Constraint                      | Status       |
+|-------------------------------|--------------|
+| Model size < 1 GB             | ✅ (~80 MB)  |
+| CPU-only execution            | ✅           |
+| No network access             | ✅           |
+| Execution time < 60s          | ✅ Tested    |
+| Works for 3–10 PDFs           | ✅ Modular   |
+
+---
+
+## 🔁 Modular Components
+
+- `main.py`: Loads inputs, handles pipeline flow
+- `utils.py`: Contains `PDFProcessor` class with all NLP and PDF logic
+- Dockerfile: Installs dependencies, ensures offline, CPU-only operation
+
+---
+
+## 📌 Summary
+
+This solution combines traditional PDF parsing with semantic embeddings and configurable domain relevance to prioritize the content that **matters most for each user**.
+
+The design ensures scalability, adaptability across domains, and compliance with all Adobe Hackathon constraints.
