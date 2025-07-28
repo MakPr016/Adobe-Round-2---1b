@@ -109,6 +109,19 @@ cp /source/folder/*.pdf ./input/
 ├── output/               # Output JSON will be saved here
 ```
 
+## 🧠 Libraries and Models Used
+
+| Library / Model           | Purpose                                          | Size            |
+|---------------------------|--------------------------------------------------|-----------------|
+| `pdfplumber`              | Extract structured text from PDFs               | ~1.5 MB         |
+| `sentence-transformers`   | Generate semantic embeddings                    | ~80 MB (model)  |
+| `all-MiniLM-L6-v2`        | Pretrained sentence embedding model             | ~80 MB          |
+| `scikit-learn`            | Cosine similarity, ML utilities                 | ~7–10 MB        |
+| `tqdm`                    | Visual progress bars                            | ~70 KB          |
+| `numpy`                   | Numerical computation support                   | ~17 MB          |
+| `pytest`, `pytest-cov`    | Testing and code coverage (for dev use)         | ~1.5 MB         |
+
+
 ## 📌 Constraints Satisfied
 
 - [x] CPU-only, no GPU
