@@ -1,5 +1,5 @@
 
-# Adobe Hackathon - PDF Intelligence Engine
+# Adobe Hackathon - Persona-Driven Document Intelligence
 
 This project is a solution for the Adobe "Connecting the Dots" Hackathon, Round 1B: Persona-Driven Document Intelligence.
 
